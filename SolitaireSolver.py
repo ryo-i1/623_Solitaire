@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from enum import IntEnum
 
-from Card import *
+from Card import Suit, Card
 
 
 class Action(IntEnum):
@@ -57,13 +57,10 @@ class SolitaireSolver:
         # 組札
         self.foundation_cards = [0] * 4
 
-    def update(self):
+    def update(self, stock_top_card: Card, opened_top_cards: list[Card]):
         """
         場の状態を更新する
         """
-
-        # 場札と山札の一番上のカード情報を受け取る
-        opened_top_cards, stock_top_card = self.get_top_cards()
 
         # 受け取ったカード情報をもとに盤面を更新
         self.set_top_cards(opened_top_cards, stock_top_card)
@@ -73,11 +70,6 @@ class SolitaireSolver:
 
         # 行動を実行
         self.execute_action(action, args)
-
-    def get_top_cards(self):
-        """場札と山札の一番上のカード情報を取得する"""
-
-        pass
 
     def set_top_cards(self, opened_top_cards, stock_top_card):
         """場札と山札の一番上のカードを更新する"""
