@@ -25,7 +25,10 @@ class Card:
 
     def __init__(self, suit: Suit, value: int):
         if not isinstance(suit, Suit):
-            raise TypeError("Invalid suit provided.")
+            if isinstance(suit, int):
+                suit = Suit(suit)
+            else:
+                raise TypeError("Invalid suit provided.")
         if not 1 <= value <= 13:
             raise ValueError("The value of the card is out of range.")
 

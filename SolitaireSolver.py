@@ -42,7 +42,7 @@ class SolitaireSolver:
     """
 
     # 場におけるカードの列数
-    N_COLUMNS = 8
+    N_COLUMNS = 7
 
     def __init__(self):
         # 場札
@@ -52,12 +52,14 @@ class SolitaireSolver:
         # 山札の一番上のカード
         self.stock_top_card = None
         # 山札の残り枚数
-        self.n_stock = 24
+        self.n_stock = 52 - (1 + self.N_COLUMNS) * self.N_COLUMNS // 2
 
         # 組札
-        self.foundation_cards = [0] * 4
+        self.foundation_cards = [None] * 4
 
-    def update(self, stock_top_card: Card, opened_top_cards: list[Card]):
+    def update(
+        self, stock_top_card: Card, opened_top_cards: list[Card]
+    ) -> tuple[Action, tuple[int]]:
         """
         場の状態を更新する
         """
@@ -71,6 +73,9 @@ class SolitaireSolver:
         # 行動を実行
         self.execute_action(action, args)
 
+        # テスト用に行動を返す
+        return action, args
+
     def set_top_cards(self, opened_top_cards, stock_top_card):
         """場札と山札の一番上のカードを更新する"""
 
@@ -79,7 +84,6 @@ class SolitaireSolver:
             # 新しいカードがめくられた場合
             if self.opened_cards[i_col] == [] and card is not None:
                 self.opened_cards[i_col].append(card)
-                self.n_closed[i_col] -= 1
 
         # 山札の一番上のカード
         self.stock_top_card = stock_top_card
@@ -97,12 +101,12 @@ class SolitaireSolver:
             if self.foundation_cards[i] is None:
                 # 組札がない場合，Aを移動できる
                 desire_cards.append(Card(i, 1))
-            elif self.foundation_cards[i].value == 13:
+            elif self.foundation_cards[i] == 13:
                 # 組札がKの場合，移動できるカードなし
                 continue
             else:
                 # 組札がA~Qの場合，次のカードを移動できる
-                desire_cards.append(self.foundation_cards[i] + 1)
+                desire_cards.append(Card(i, self.foundation_cards[i] + 1))
 
         # 場札の表カードを順に見ていく
         for i_col, cards in enumerate(self.opened_cards):
@@ -117,7 +121,7 @@ class SolitaireSolver:
                 # i列のカードを組札に移動する
                 return Action.MOVE_TABLEAU_TO_FOUNDATION, (i_col,)
 
-        if self.stock_top_card in desire_cards:
+        if self.stock_top_card is not None and self.stock_top_card in desire_cards:
             # 山札の一番上のカードを組札に移動する
             return Action.MOVE_STOCK_TO_FOUNDATION, ()
 
@@ -129,7 +133,7 @@ class SolitaireSolver:
             # 列が空の場合
             if len(cards) == 0:
                 # Kを移動できる
-                desire_cards.append(Card.get_all_cards(value=[13]))
+                desire_cards.append(Card.get_all_cards(values=[13]))
             else:
                 # その列の一番上の表カード
                 top_card = cards[-1]
@@ -140,6 +144,9 @@ class SolitaireSolver:
         for i_col, i_cards in enumerate(self.opened_cards):
             # 列が空の場合skip
             if len(i_cards) == 0:
+                continue
+            # 列の裏カードがなく，Kが一番下の場合skip
+            if self.n_closed[i_col] == 0 and i_cards[0].value == 13:
                 continue
 
             # その列の一番下の表カード
@@ -158,7 +165,7 @@ class SolitaireSolver:
         # 3. 山札の一番上のカードを場札に移動できるか
 
         # 山札の一番上にカードがある場合
-        if self.stock_top_card is None:
+        if self.stock_top_card is not None:
             # 移動先カード
             for j_col, j_desire_cards in enumerate(desire_cards):
                 if self.stock_top_card in j_desire_cards:
@@ -182,10 +189,10 @@ class SolitaireSolver:
             # 移動元 カードをpop
             card = self.opened_cards[i_col].pop()
             # 移動先組札を更新
-            self.foundation_cards[card.suit] = card
+            self.foundation_cards[card.suit] = card.value
 
             # プレイヤーに通知
-            send_msg(f"場札の {i_col + 1} 列の {card} を組札に移動する")
+            send_msg(f"場札の {i_col + 1} 列目の {card} を組札に移動する")
 
         # 山札から組札に移動
         elif action == Action.MOVE_STOCK_TO_FOUNDATION:
@@ -194,7 +201,7 @@ class SolitaireSolver:
 
             # 盤面を更新
             # 移動先 組札を更新
-            self.foundation_cards[card.suit] = card
+            self.foundation_cards[card.suit] = card.value
 
             # プレイヤーに通知
             send_msg(f"山札の {card} を組札に移動する")
@@ -217,7 +224,7 @@ class SolitaireSolver:
             self.opened_cards[j_col].extend(cards)
 
             # プレイヤーに通知
-            send_msg(f"場札の {i_col + 1} 列の {card} を {j_col + 1} 列に移動する")
+            send_msg(f"場札の {i_col + 1} 列目の {card} を {j_col + 1} 列目に移動する")
 
         # 山札から場札に移動
         elif action == Action.MOVE_STOCK_TO_TABLEAU:
@@ -233,7 +240,7 @@ class SolitaireSolver:
             self.stock_top_card = None
 
             # プレイヤーに通知
-            send_msg(f"山札の {card} を {j_col + 1} 列に移動する")
+            send_msg(f"山札の {card} を場札の {j_col + 1} 列目に移動する")
 
         # 山札をめくる
         elif action == Action.DRAW_STOCK:
@@ -246,6 +253,12 @@ class SolitaireSolver:
 
             # プレイヤーに通知
             send_msg("山札をめくる")
+
+        # カードの移動終了後, openカードがない場合
+        for i in range(self.N_COLUMNS):
+            # close枚数を減らす
+            if self.opened_cards[i] == [] and self.n_closed[i] > 0:
+                self.n_closed[i] -= 1
 
 
 def send_msg(msg: str):
