@@ -13,6 +13,7 @@ class Action(IntEnum):
     - 場札のカードを場札に移動する (i列 -> j列)
     - 山札のカードを場札に移動する (山札 -> j列)
     - 山札をめくる
+    - 何もできない
     """
 
     MOVE_TABLEAU_TO_FOUNDATION = 0
@@ -20,6 +21,7 @@ class Action(IntEnum):
     MOVE_TABLEAU_TO_TABLEAU = 2
     MOVE_STOCK_TO_TABLEAU = 3
     DRAW_STOCK = 4
+    DO_NOTHING = 5
 
 
 class SolitaireSolver:
@@ -28,34 +30,38 @@ class SolitaireSolver:
 
     Attributes
     ----------
+    n_columns : int
+        場札の列数
     opened_cards : 2d list of Card
         場札の表カード
         -1番目が一番上
     n_closed : 1d list of int
         場札の裏カードの枚数
-    stock_top_card : Card
-        山札の一番上のカード
     foundation_cards : 1d list of Card
         組札の枚数
     n_stock : int
         山札の残り枚数
+    stock_cards : list of Card
+        山札のカード
+    stock_top_idx : int
+        山札の一番上のカードのインデックス
     """
 
-    # 場におけるカードの列数
-    N_COLUMNS = 7
-
     def __init__(self):
-        # 場札
-        self.opened_cards = [[] for _ in range(self.N_COLUMNS)]
-        self.n_closed = list(range(self.N_COLUMNS))
+        # 場におけるカードの列数
+        self.n_columns = 7
 
-        # 山札の一番上のカード
-        self.stock_top_card = None
-        # 山札の残り枚数
-        self.n_stock = 52 - (1 + self.N_COLUMNS) * self.N_COLUMNS // 2
+        # 場札
+        self.opened_cards = [[] for _ in range(self.n_columns)]
+        self.n_closed = [1, 2, 3, 4, 5, 6, 7]
+
+        # 山札
+        self.stock_cards = [None]
+        self.stock_top_idx = 0
+        self.n_stock = 52 - np.sum(self.n_closed)
 
         # 組札
-        self.foundation_cards = [None] * 4
+        self.foundation_cards = [0] * 4
 
     def update(
         self, stock_top_card: Card, opened_top_cards: list[Card]
@@ -65,7 +71,7 @@ class SolitaireSolver:
         """
 
         # 受け取ったカード情報をもとに盤面を更新
-        self.set_top_cards(opened_top_cards, stock_top_card)
+        self.set_top_cards(stock_top_card, opened_top_cards)
 
         # 行動を決定
         action, args = self.solve()
@@ -76,8 +82,8 @@ class SolitaireSolver:
         # テスト用に行動を返す
         return action, args
 
-    def set_top_cards(self, opened_top_cards, stock_top_card):
-        """場札と山札の一番上のカードを更新する"""
+    def set_top_cards(self, stock_top_card, opened_top_cards):
+        """場札と山札のカードを更新する"""
 
         # 場札の表カード
         for i_col, card in enumerate(opened_top_cards):
@@ -85,8 +91,22 @@ class SolitaireSolver:
             if self.opened_cards[i_col] == [] and card is not None:
                 self.opened_cards[i_col].append(card)
 
-        # 山札の一番上のカード
-        self.stock_top_card = stock_top_card
+                # 裏カードの枚数を減らす
+                if self.n_closed[i_col] > 0:
+                    self.n_closed[i_col] -= 1
+
+        # 山札に未知のカードがある場合
+        if len(self.stock_cards) - 1 < self.n_stock:
+            # 山札に表示されているカードが変わった場合
+            if self.stock_cards[self.stock_top_idx] != stock_top_card:
+                self.stock_cards.append(stock_top_card)
+                self.stock_top_idx += 1
+
+        # 山札が全て既知の場合
+        else:
+            # 山札に表示されているカードが変わった場合
+            if self.stock_cards[self.stock_top_idx] != stock_top_card:
+                self.stock_top_idx = (self.stock_top_idx + 1) % len(self.stock_cards)
 
     def solve(self) -> tuple[Action, tuple[int]]:
         """
@@ -94,19 +114,6 @@ class SolitaireSolver:
         """
 
         # 1. 組札に移動できるカードが場札か山札にあるか
-
-        # 組札に移動できるカード
-        desire_cards = []
-        for i in range(4):
-            if self.foundation_cards[i] is None:
-                # 組札がない場合，Aを移動できる
-                desire_cards.append(Card(i, 1))
-            elif self.foundation_cards[i] == 13:
-                # 組札がKの場合，移動できるカードなし
-                continue
-            else:
-                # 組札がA~Qの場合，次のカードを移動できる
-                desire_cards.append(Card(i, self.foundation_cards[i] + 1))
 
         # 場札の表カードを順に見ていく
         for i_col, cards in enumerate(self.opened_cards):
@@ -117,28 +124,22 @@ class SolitaireSolver:
             # その列の一番上のカード
             top_card = cards[-1]
 
-            if top_card in desire_cards:
+            # top_cardを組札に移動できるか
+            if self.can_move_to_foundation(top_card):
                 # i列のカードを組札に移動する
                 return Action.MOVE_TABLEAU_TO_FOUNDATION, (i_col,)
 
-        if self.stock_top_card is not None and self.stock_top_card in desire_cards:
-            # 山札の一番上のカードを組札に移動する
-            return Action.MOVE_STOCK_TO_FOUNDATION, ()
+        # 山札にカードが表示されている場合
+        if self.stock_top_idx != 0:
+            # 山札の一番上のカード
+            stock_top_card = self.stock_cards[self.stock_top_idx]
+
+            # 組札に移動できるか
+            if self.can_move_to_foundation(stock_top_card):
+                # 山札のカードを組札に移動する
+                return Action.MOVE_STOCK_TO_FOUNDATION, ()
 
         # 2. 場札内で移動できるカードがあるか
-
-        # 移動先カードリスト
-        desire_cards = []
-        for cards in self.opened_cards:
-            # 列が空の場合
-            if len(cards) == 0:
-                # Kを移動できる
-                desire_cards.append(Card.get_all_cards(values=[13]))
-            else:
-                # その列の一番上の表カード
-                top_card = cards[-1]
-                # その列に移動できるカード
-                desire_cards.append(Card.get_contrast_cards(top_card - 1))
 
         # 移動元カード
         for i_col, i_cards in enumerate(self.opened_cards):
@@ -152,28 +153,116 @@ class SolitaireSolver:
             # その列の一番下の表カード
             i_bottom_card = i_cards[0]
 
-            # 移動先カード
-            for j_col, j_desire_cards in enumerate(desire_cards):
-                # 移動元と移動先が同じ列の場合skip
-                if i_col == j_col:
-                    continue
-
-                if i_bottom_card in j_desire_cards:
-                    # i_bottom_cardをj列に移動する
-                    return Action.MOVE_TABLEAU_TO_TABLEAU, (i_col, j_col)
+            # 場札に移動できるか
+            j_col = self.can_move_to_tableau(i_bottom_card, i_col)
+            # i列目のカードをj列目に移動する
+            if j_col != -1:
+                return Action.MOVE_TABLEAU_TO_TABLEAU, (i_col, j_col)
 
         # 3. 山札の一番上のカードを場札に移動できるか
 
-        # 山札の一番上にカードがある場合
-        if self.stock_top_card is not None:
-            # 移動先カード
-            for j_col, j_desire_cards in enumerate(desire_cards):
-                if self.stock_top_card in j_desire_cards:
-                    # 山札の一番上のカードをj列に移動する
-                    return Action.MOVE_STOCK_TO_TABLEAU, (j_col,)
+        # 山札にカードが表示されている場合
+        if self.stock_top_idx != 0:
+            # 山札の一番上のカード
+            stock_top_card = self.stock_cards[self.stock_top_idx]
+
+            # 場札に移動できるか
+            j_col = self.can_move_to_tableau(stock_top_card, -1)
+            # 山札のカードをj列に移動する
+            if j_col != -1:
+                return Action.MOVE_STOCK_TO_TABLEAU, (j_col,)
 
         # 4. 山札をめくる
-        return Action.DRAW_STOCK, ()
+
+        # 山札に未知のカードがある場合
+        if len(self.stock_cards) - 1 < self.n_stock:
+            # 山札を1枚めくる
+            return Action.DRAW_STOCK, (1,)
+
+        # 山札が全て既知の場合
+        else:
+            # 山札を何枚めくるか
+            for i in range(1, len(self.stock_cards)):
+                # 探索対象
+                i_stock_idx = (self.stock_top_idx + i) % len(self.stock_cards)
+                if i_stock_idx == 0:
+                    continue
+                # 探索対象のカード
+                card = self.stock_cards[i_stock_idx]
+
+                # 組札に移動できるか
+                if self.can_move_to_foundation(card):
+                    return Action.DRAW_STOCK, (i,)
+
+                # 場札に移動できるか
+                if self.can_move_to_tableau(card, -1) != -1:
+                    return Action.DRAW_STOCK, (i,)
+
+        # 5. これ以上アクションできない
+
+        return Action.DO_NOTHING, ()
+
+    def can_move_to_foundation(self, card: Card) -> bool:
+        """
+        cardを組札に移動できるか
+        """
+
+        # 組札に移動できるカード
+        desire_cards = []
+        for i in range(4):
+            # 組札がない場合，Aを移動できる
+            if self.foundation_cards[i] == 0:
+                desire_cards.append(Card(i, 1))
+
+            # 組札がKの場合，移動できるカードなし
+            elif self.foundation_cards[i] == 13:
+                continue
+
+            # 組札がA~Qの場合，次のカードを移動できる
+            else:
+                desire_cards.append(Card(i, self.foundation_cards[i] + 1))
+
+        return card in desire_cards
+
+    def can_move_to_tableau(self, card: Card, ignore_col: int = -1) -> int:
+        """
+        cardを場札に移動できるか
+
+        Parameters
+        ----------
+        ignore_col : int
+            無視する移動先の列インデックス
+
+        Returns
+        -------
+        moveable index : int
+            移動先の列インデックス
+        """
+
+        # 場札に移動できるカード
+        desire_cards = []
+        for cards in self.opened_cards:
+            # 列が空の場合
+            if len(cards) == 0:
+                # Kを移動できる
+                desire_cards.append(Card.get_all_cards(values=[13]))
+            else:
+                # その列の一番上の表カード
+                top_card = cards[-1]
+                # その列に移動できるカード
+                desire_cards.append(Card.get_contrast_cards(top_card - 1))
+
+        for i, cards in enumerate(desire_cards):
+            # ignore_col列目は無視
+            if i == ignore_col:
+                continue
+
+            # i列目に移動できる
+            if card in cards:
+                return i
+
+        # 移動できない
+        return -1
 
     def execute_action(self, action: Action, args: tuple[int]):
         """
@@ -197,7 +286,9 @@ class SolitaireSolver:
         # 山札から組札に移動
         elif action == Action.MOVE_STOCK_TO_FOUNDATION:
             # 移動元 山札のカード
-            card = self.stock_top_card
+            card = self.stock_cards.pop(self.stock_top_idx)
+            self.stock_top_idx -= 1
+            self.n_stock -= 1
 
             # 盤面を更新
             # 移動先 組札を更新
@@ -229,36 +320,75 @@ class SolitaireSolver:
         # 山札から場札に移動
         elif action == Action.MOVE_STOCK_TO_TABLEAU:
             # 移動元 山札のカード
-            card = self.stock_top_card
+            card = self.stock_cards.pop(self.stock_top_idx)
+            self.stock_top_idx -= 1
+            self.n_stock -= 1
             # 移動先 列
             j_col = args[0]
 
             # 盤面を更新
             # 移動先 カードを追加
             self.opened_cards[j_col].append(card)
-            # 移動元 山札のカードをpop
-            self.stock_top_card = None
 
             # プレイヤーに通知
             send_msg(f"山札の {card} を場札の {j_col + 1} 列目に移動する")
 
         # 山札をめくる
         elif action == Action.DRAW_STOCK:
-            # 山札のカード
-            card = self.stock_top_card
+            # 何枚めくるか
+            n_draw = args[0]
 
-            # 盤面を更新
-            # 山札のカードをめくる
-            self.stock_top_card = None
+            # カードを1枚めくる
+            # self.stock_top_idx = (self.stock_top_idx + 1) % len(self.stock_cards)
 
             # プレイヤーに通知
-            send_msg("山札をめくる")
+            send_msg(f"山札をあと {n_draw} 枚めくる")
 
-        # カードの移動終了後, openカードがない場合
-        for i in range(self.N_COLUMNS):
-            # close枚数を減らす
-            if self.opened_cards[i] == [] and self.n_closed[i] > 0:
-                self.n_closed[i] -= 1
+        # 何もできない
+        elif action == Action.DO_NOTHING:
+            # ゲームクリア判定
+            if self.foundation_cards == [13, 13, 13, 13]:
+                self.gameclear()
+            else:
+                self.gameover()
+
+    def draw(self):
+
+        print()
+        print("SOLVER", "=" * 20)
+        print(
+            f"[山札]\t{self.stock_cards[self.stock_top_idx]} ({self.stock_top_idx + 1}/{len(self.stock_cards)})"
+        )
+
+        print("[組札]", end='')
+        for i in range(4):
+            print(f"\t{Suit(i)}\t: {self.foundation_cards[i]}")
+        print()
+
+        for i_col, cards in enumerate(self.opened_cards):
+            print(f"[場札 {i_col + 1}]", end='')
+            print(f"({self.n_closed[i_col]})\t", end='')
+            for card in cards:
+                print(card, end=', ')
+            print()
+        print("=" * 20)
+        print()
+
+    def gameover(self):
+        """
+        ゲームオーバー
+        """
+
+        send_msg("カードをこれ以上移動できません")
+        exit()
+
+    def gameclear(self):
+        """
+        ゲームクリア
+        """
+
+        send_msg("ゲームクリア")
+        exit()
 
 
 def send_msg(msg: str):

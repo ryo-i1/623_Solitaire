@@ -49,6 +49,11 @@ class Card:
         return self.__add__(-value)
 
     def __eq__(self, card: "Card"):
+        if card is None:
+            return False
+        if not isinstance(card, Card):
+            raise TypeError("Invalid card provided.")
+
         return self.suit == card.suit and self.value == card.value
 
     def __ne__(self, card: "Card"):
@@ -66,9 +71,7 @@ class Card:
         cardが赤なら黒のカード，黒なら赤のカードを返す
         """
 
-        contrast_suits = (
-            [Suit.CLUB, Suit.SPADE] if card.is_red() else [Suit.HEART, Suit.DIAMOND]
-        )
+        contrast_suits = [suit for suit in Suit if suit.is_red() != card.is_red()]
         return [Card(suit, card.value) for suit in contrast_suits]
 
     @staticmethod
