@@ -61,6 +61,11 @@ class SolitaireSolver:
         # 組札
         self.foundation_cards = [0] * 4
 
+    def get_n_closed_card(self, i_col: int) -> int:
+        """i列目の裏カードの枚数を返す"""
+
+        return self.n_closed[i_col]
+
     def update(
         self, stock_top_card: Card, opened_top_cards: list[Card]
     ) -> tuple[Action, tuple[int]]:
@@ -75,10 +80,9 @@ class SolitaireSolver:
         action, args = self.solve()
 
         # 行動を実行
-        self.execute_action(action, args)
+        is_end = self.execute_action(action, args)
 
-        # テスト用に行動を返す
-        return action, args
+        return action, args, is_end
 
     def set_top_cards(self, stock_top_card, opened_top_cards):
         """場札と山札のカードを更新する"""
@@ -279,7 +283,7 @@ class SolitaireSolver:
             self.foundation_cards[card.suit] = card.value
 
             # プレイヤーに通知
-            send_msg(f"場札の {i_col + 1} 列目の {card} を組札に移動する")
+            send_msg(f"場札 {i_col + 1} 列目の {card} を組札に移動する")
 
         # 山札から組札に移動
         elif action == Action.MOVE_STOCK_TO_FOUNDATION:
@@ -313,7 +317,7 @@ class SolitaireSolver:
             self.opened_cards[j_col].extend(cards)
 
             # プレイヤーに通知
-            send_msg(f"場札の {i_col + 1} 列目の {card} を {j_col + 1} 列目に移動する")
+            send_msg(f"場札 {i_col + 1} 列目の {card} を {j_col + 1} 列目に移動する")
 
         # 山札から場札に移動
         elif action == Action.MOVE_STOCK_TO_TABLEAU:
@@ -329,7 +333,7 @@ class SolitaireSolver:
             self.opened_cards[j_col].append(card)
 
             # プレイヤーに通知
-            send_msg(f"山札の {card} を場札の {j_col + 1} 列目に移動する")
+            send_msg(f"山札の {card} を場札 {j_col + 1} 列目に移動する")
 
         # 山札をめくる
         elif action == Action.DRAW_STOCK:
@@ -345,10 +349,18 @@ class SolitaireSolver:
         # 何もできない
         elif action == Action.DO_NOTHING:
             # ゲームクリア判定
-            if self.foundation_cards == [13, 13, 13, 13]:
-                self.gameclear()
-            else:
-                self.gameover()
+            return True
+
+        return False
+
+    def is_clear(self):
+        """ゲーム終了時にゲームクリアか判定する"""
+
+        # 組札が全てKの場合
+        if all([foundation_card == 13 for foundation_card in self.foundation_cards]):
+            return True
+
+        return False
 
     def draw(self):
 
@@ -390,7 +402,7 @@ class SolitaireSolver:
 
 
 def send_msg(msg: str):
-    print(msg)
+    print("\t" + msg)
 
 
 def main():

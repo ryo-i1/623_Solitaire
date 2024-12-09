@@ -18,6 +18,9 @@ class Suit(IntEnum):
     def __str__(self):
         return self.name.capitalize()
 
+    def __repr__(self):
+        return f"Suit.{self.name.upper()}"
+
 
 class Card:
 
@@ -34,7 +37,13 @@ class Card:
         self.value = value
 
     def __str__(self):
-        return f"{self.value} of {self.suit}"
+        return f"{str(self.suit)[0]}{self.value}"
+
+    def __repr__(self):
+        return f"Card({self.suit}, {self.value})"
+
+    def __hash__(self):
+        return hash((self.suit, self.value))
 
     def __add__(self, value: int):
         new_value = self.value + value
@@ -86,3 +95,16 @@ class Card:
             values = list(range(1, 14))
 
         return [Card(suit, val) for suit in suits for val in values]
+
+    @staticmethod
+    def from_template_name(name: str) -> "Card":
+        """
+        テンプレート名からカードを生成する
+        """
+
+        suit, rank = name.split('_')
+        return Card(Suit[suit.upper()], int(rank))
+
+    @staticmethod
+    def get_suit_rank(card: "Card") -> tuple[Suit, int]:
+        return card.suit, card.value
