@@ -3,6 +3,7 @@ import cv2
 import pygetwindow as gw
 import mss
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 from Card import Card, Suit
 
@@ -10,8 +11,8 @@ from Card import Card, Suit
 SOLITAIRE_WINDOW_TITLE = "Solitaire & Casual Games"
 TABLEAU_COLS = 7
 
-WORK_DIR = Path(__file__).resolve().parent
-TEMPLATE_DIR = WORK_DIR.parent.joinpath("resources", "template_images")
+WORK_DIR = Path(__file__).resolve().parent.parent
+TEMPLATE_DIR = WORK_DIR.joinpath("resources", "template_images")
 
 
 class Identifier:
@@ -37,6 +38,15 @@ class Identifier:
 
             templates[filepath.stem] = img
         self.templates = templates
+
+        # SIFT
+        sift = cv2.SIFT_create()
+        temp_descriptors = {}
+        for temp_name, temp_img in self.templates.items():
+            temp_img_gray = cv2.cvtColor(temp_img, cv2.COLOR_RGB2GRAY)
+            kp, des = sift.detectAndCompute(temp_img_gray, None)
+            temp_descriptors[temp_name] = des
+        self.temp_descriptors = temp_descriptors
 
     def find_solitaire_window(self):
         """ソリティアのウィンドウを取得する"""
@@ -165,6 +175,16 @@ class Identifier:
         tableau_imgs = self.get_tableau_top_cards_area(img)
         tableau_cards = [self.identify_card(img) for img in tableau_imgs]
 
+        # save images
+        for i, (card, img) in enumerate(
+            zip([stock_card] + tableau_cards, [stock_img] + tableau_imgs)
+        ):
+            if card is not None:
+                save_path = WORK_DIR.joinpath("tmp", f"{card}.png")
+                res = cv2.imwrite(str(save_path), cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+                if not res:
+                    print(f"Failed to save {save_path}. img shape: {img.shape}")
+
         return stock_card, tableau_cards
 
     def get_stock_top_card_area(self, img: np.ndarray) -> np.ndarray:
@@ -247,34 +267,47 @@ class Identifier:
 
         return bottom_list
 
+    def compute_similarity(self, temp_name, des1):
+        temp_des = self.temp_descriptors[temp_name]
+        matches = cv2.BFMatcher().knnMatch(des1, temp_des, k=2)
+        dists = [m.distance for m, _ in matches]
+        similarity = np.mean(dists) if len(dists) > 0 else float('inf')
+        return temp_name, similarity
+
     def identify_card(self, img: np.ndarray) -> Card:
         """カードを識別する"""
 
-        max_similarity = 0
-        max_name = None
+        # gray
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        # resize
+        temp_img = list(self.templates.values())[0]
+        img = cv2.resize(img, (temp_img.shape[1], temp_img.shape[0]))
+        # 2値化
+        # img = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)[1]
 
-        for temp_name, temp_img in self.templates.items():
-            # 画像サイズを合わせる
-            img_resized = cv2.resize(img, (temp_img.shape[1], temp_img.shape[0]))
+        # SIFT
+        sift = cv2.SIFT_create()
+        kp1, des1 = sift.detectAndCompute(img, None)
 
-            # template matching
-            # result = cv2.matchTemplate(img_resized, temp_img, cv2.TM_CCOEFF_NORMED)
-            # similarity = cv2.minMaxLoc(result)[1]
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            results = executor.map(
+                self.compute_similarity,
+                self.temp_descriptors.keys(),
+                [des1] * len(self.temp_descriptors),
+            )
 
-            # simple equation
-            similarity = np.mean(img_resized == temp_img)
-
-            if similarity > max_similarity:
-                max_similarity = similarity
-                max_name = temp_name
+        scores = {}
+        for temp_name, similarity in results:
+            scores[temp_name] = similarity
+        best_name, best_similarity = min(scores.items(), key=lambda x: x[1])
 
         # カードが置かれていない場合
-        if str.startswith(max_name, "nac"):
+        if str.startswith(best_name, "nac"):
             return None
-        elif str.startswith(max_name, "back"):
+        elif str.startswith(best_name, "back"):
             return None
 
-        return Card.from_template_name(max_name)
+        return Card.from_template_name(best_name)
 
     def get_stock_closed_pos(self) -> tuple[int, int]:
         """山札の閉じたカードの位置を取得する"""

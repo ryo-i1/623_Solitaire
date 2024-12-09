@@ -13,6 +13,8 @@ work_dir = Path.cwd().resolve()
 # log
 log_dir = work_dir.joinpath("log", time.strftime("%Y%m%d_%H%M%S"))
 log_dir.mkdir(parents=True, exist_ok=True)
+log_identify_dir = log_dir.joinpath("identify")
+log_identify_dir.mkdir(parents=True, exist_ok=True)
 
 # 画面をキャプチャする間隔と上限 (sec)
 CAPTURE_INTERVAL = 0.3
@@ -98,7 +100,7 @@ def main():
         cv2.imwrite(str(savepath), cv2.cvtColor(img_capture, cv2.COLOR_RGB2BGR))
 
         # game end
-        if is_end:
+        if is_end or solver.is_clear():
             break
 
         # ESC key to exit
