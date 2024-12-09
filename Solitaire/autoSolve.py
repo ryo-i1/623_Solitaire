@@ -9,8 +9,10 @@ from Card import Card, Suit
 from SolitaireSolver import SolitaireSolver, Action
 from Identifier import Identifier
 
-work_dir = Path.cwd().resolve().parent
-log_dir = work_dir.joinpath("log")
+work_dir = Path.cwd().resolve()
+# log
+log_dir = work_dir.joinpath("log", time.strftime("%Y%m%d_%H%M%S"))
+log_dir.mkdir(parents=True, exist_ok=True)
 
 # 画面をキャプチャする間隔と上限 (sec)
 CAPTURE_INTERVAL = 0.3
@@ -55,10 +57,7 @@ def main():
         stock_top_card, tableau_top_cards = identifier.get_top_cards(img_capture)
 
         send_log(f"\tStock: {stock_top_card}", debug=True)
-        send_log("\tTableau: [", end="", debug=True)
-        for card in tableau_top_cards:
-            send_log(f"{card}, ", end="", debug=True)
-        send_log("]", debug=True)
+        send_log(f"\tTableau: {[str(card) for card in tableau_top_cards]}", debug=True)
 
         # update solver
         action, args, is_end = solver.update(stock_top_card, tableau_top_cards)
@@ -115,6 +114,9 @@ def main():
 def send_log(msg, end="\n", debug=False):
     if not debug:
         print(msg, end=end)
+
+    with open(log_dir.joinpath("log.txt"), "a") as f:
+        f.write(msg + end)
 
 
 if __name__ == "__main__":
