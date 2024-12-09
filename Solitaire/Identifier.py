@@ -279,6 +279,11 @@ class Identifier:
 
         # gray
         img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+
+        # 画像が緑の場合
+        if np.mean((img > 50) & (img < 200)) > 0.8:
+            return None
+
         # resize
         temp_img = list(self.templates.values())[0]
         img = cv2.resize(img, (temp_img.shape[1], temp_img.shape[0]))
